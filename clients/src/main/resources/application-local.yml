@@ -1,0 +1,9 @@
+config:
+  rpc:
+    username: user1
+    password: test
+    host: localhost
+    port: 10006
+parties:
+  partyC:
+    name: O=PartyC,L=Sydney,C=AU

@@ -1,0 +1,68 @@
+name: Deploy
+# on:
+#   push:
+#     branches:
+#       # - main
+#       # - develop
+#       - feature/PDE-100-create-helm-template-and-dockerfile-to-frontend
+on:
+  workflow_call:
+    inputs:
+      release-name:
+        required: true
+        type: string
+      namespace:
+        required: true
+        type: string
+      values:
+        required: true
+        type: string
+      chart-path:
+        required: true
+        type: string
+    secrets:
+      aws-access-key-id:
+        required: true
+      aws-secret-access-key:
+        required: true
+  # push:
+  #   paths-ignore:
+  #     - 'apps/client/**'
+  #   branches: [feature/PDE-100-create-helm-template-and-dockerfile-to-frontend]
+
+jobs:
+  # main:
+  #   runs-on: ubuntu-latest
+  #   if: ${{ github.event_name != 'pull_request' }}
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #       name: Checkout [main]
+  #       with:
+  #         fetch-depth: 0
+  #     - name: Derive appropriate SHAs for base and head for `nx affected` commands
+  #       uses: nrwl/nx-set-shas@v2
+  #     - uses: actions/setup-node@v1
+  #       with:
+  #         node-version: '16'
+  #     - run: npm install
+  #     - run: npx nx affected --target=build --parallel=3
+  #     - run: npx nx affected --target=test --parallel=2
+  develop:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout [feature/PDE-100-create-helm-template-and-dockerfile-to-frontend]
+        with:
+          fetch-depth: 0
+      - name: EKS Helm Deploy
+        uses: craftech-io/eks-helm-deploy-action@v2.0.0-rc3
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: us-east-1
+          cluster-name: bestibid-dev-cluster
+          config-files: ${{ inputs.values }}
+          namespace: ${{ inputs.namespace }}
+          name: ${{ inputs.release-name }}
+          chart-path: ${{ inputs.chart-path }}

@@ -1,0 +1,136 @@
+name: CI/CD Corda API
+on:
+  workflow_dispatch:
+    push:
+    paths-ignore:
+      - 'contracts/**'
+      - 'workflows/**'
+      - '.github/workflows/github-actions-pipeline-contracts.yml'
+      - '.github/workflows/github-actions-pipeline-workflows.yml'
+  push:
+    branches: 
+        - main
+        - develop
+        
+
+env:
+    IMAGE_NAME: bestbid-api-corda
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request'  && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout [main]
+        with:
+          fetch-depth: 0
+      
+      - name: Create application env file
+        id: lookupSdkVersion
+        uses: mikefarah/yq@master
+        env:
+          HOST_CORDA_02: ${{ secrets.HOST_CORDA_02 }}
+        with:
+          cmd: yq -i e '.config.rpc.host = env(HOST_CORDA_02)' clients/src/main/resources/application.yml
+      
+      - uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu' # See 'Supported distributions' for available options
+          java-version: '8'
+      - name: Build gradle client
+        run: ./gradlew clients:bootJar
+
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push the image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
+          IMAGE_TAG: v0.0.1
+        run: |
+          # Build a docker container and push it to ECR 
+          docker build -f clients/Dockerfile . -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG
+          echo "Pushing image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG"
+  
+  helm-deploy-prd:
+      needs: main
+      uses: ./.github/workflows/github-actions-pipeline-helm-deploy.yml
+      with:
+        release-name: bestbid-api-corda
+        namespace: bestbid-platform-web-production
+        values: ./clients/helm/values-prd.yaml
+        chart-path: ./clients/helm/
+      secrets:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  develop:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request'  && github.ref == 'refs/heads/develop' }}
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout [develop]
+        with:
+          fetch-depth: 0
+      
+      - name: Create application env file
+        id: lookupSdkVersion
+        uses: mikefarah/yq@master
+        env:
+          HOST_CORDA_01: ${{ secrets.HOST_CORDA_01 }}
+        with:
+          cmd: yq -i e '.config.rpc.host = env(HOST_CORDA_01)' clients/src/main/resources/application.yml
+      
+      - uses: actions/setup-java@v2
+        with:
+          distribution: 'zulu' # See 'Supported distributions' for available options
+          java-version: '8'
+      - name: Build gradle client
+        run: ./gradlew clients:bootJar
+
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push the image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
+          IMAGE_TAG: v0.0.1
+        run: |
+          # Build a docker container and push it to ECR 
+          docker build -f clients/Dockerfile . -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG-SNAPSHOT
+          echo "Pushing image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG-SNAPSHOT
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_NAME-$IMAGE_TAG-SNAPSHOT"
+  
+  helm-deploy:
+      needs: develop
+      uses: ./.github/workflows/github-actions-pipeline-helm-deploy.yml
+      with:
+        release-name: bestbid-api-corda
+        namespace: bestbid-platform-web-develop
+        values: ./clients/helm/values.yaml
+        chart-path: ./clients/helm/
+      secrets:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
